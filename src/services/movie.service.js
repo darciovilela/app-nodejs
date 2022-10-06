@@ -40,33 +40,12 @@ export default class MovieService {
    */
   // tag::all[]
   async all(sort = 'title', order = 'ASC', limit = 6, skip = 0, userId = undefined) {
-    // Open an Session
-    const session = this.driver.session()
+    // TODO: Open an Session
+    // TODO: Execute a query in a new Read Transaction
+    // TODO: Get a list of Movies from the Result
+    // TODO: Close the session
 
-    // Execute a query in a new Read Transaction
-    const res = await session.executeRead(
-      tx => tx.run(
-        `
-          MATCH (m:Movie)
-          WHERE m.\`${sort}\` IS NOT NULL
-          RETURN m {
-            .*
-          } AS movie
-          ORDER BY m.\`${sort}\` ${order}
-          SKIP $skip
-          LIMIT $limit
-        `,
-        { skip: int(skip), limit: int(limit) }
-      )
-    )
-
-    // Get a list of Movies from the Result
-    const movies = res.records.map(row => toNativeTypes(row.get('movie')))
-
-    // Close the session
-    await session.close()
-
-    return movies
+    return popular
   }
   // end::all[]
 
