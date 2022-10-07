@@ -60,6 +60,7 @@ export default class ReviewService {
    */
   // tag::add[]
   async add(userId, movieId, rating) {
+<<<<<<< HEAD
     // tag::convert[]
     // Convert the native integer into a Neo4j Integer
     rating = int(rating)
@@ -68,6 +69,11 @@ export default class ReviewService {
     // tag::write[]
     // Save the rating to the database
 
+=======
+    // Convert the native integer into a Neo4j Integer
+    rating = int(rating)
+
+>>>>>>> c4b72e6 (Completed challenge: Rating Movies. Create a (:User)-[:RATED]->(:Movie) relationship with a .rating property)
     // Open a new session
     const session = this.driver.session()
 
