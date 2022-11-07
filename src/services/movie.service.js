@@ -4,8 +4,6 @@ import { toNativeTypes } from '../utils.js';
 import NotFoundError from '../errors/not-found.error.js';
 import { int } from 'neo4j-driver';
 
-// TODO: Import the `int` function from neo4j-driver
-
 export default class MovieService {
 	/**
 	 * @type {neo4j.Driver}
@@ -97,7 +95,8 @@ export default class MovieService {
 	 * @param {string | undefined} userId
 	 * @returns {Promise<Record<string, any>[]>}
 	 */
-	// tag::getByGenre[]
+
+	// tag::Get all movies in a genre
 	async getByGenre(
 		name,
 		sort = 'title',
@@ -106,10 +105,31 @@ export default class MovieService {
 		skip = 0,
 		userId = undefined
 	) {
-		// TODO: Get Movies in a Genre
-		// MATCH (m:Movie)-[:IN_GENRE]->(:Genre {name: $name})
+		const session = this.driver.session();
+		const res = await session.executeRead(async (tx) => {
+			const favorites = await this.getUserFavorites(tx, userId);
 
-		return popular.slice(skip, skip + limit);
+			return tx.run(
+				`
+			MATCH (m:Movie)-[:IN_GENRE]->(:Genre {name: $name})
+      		WHERE m.\`${sort}\` IS NOT NULL
+      		RETURN m {
+        		.*,
+        		favorite: m.tmdbId IN $favorites
+      		} AS movie
+      		ORDER BY m.\`${sort}\` ${order}
+      		SKIP $skip
+      		LIMIT $limit
+    `,
+				{ skip: int(skip), limit: int(limit), favorites, name }
+			);
+		});
+		const movies = res.records.map((row) => toNativeTypes(row.get('movie')));
+
+		//  Close the session
+		await session.close();
+
+		return movies;
 	}
 	// end::getByGenre[]
 
@@ -134,7 +154,8 @@ export default class MovieService {
 	 * @param {string | undefined} userId
 	 * @returns {Promise<Record<string, any>[]>}
 	 */
-	// tag::getForActor[]
+
+	// Get a list that Actor acted in
 	async getForActor(
 		id,
 		sort = 'title',
@@ -143,10 +164,31 @@ export default class MovieService {
 		skip = 0,
 		userId = undefined
 	) {
-		// TODO: Get Movies acted in by a Person
-		// MATCH (:Person {tmdbId: $id})-[:ACTED_IN]->(m:Movie)
+		const session = this.driver.session();
 
-		return roles.slice(skip, skip + limit);
+		const res = await session.executeRead(async (tx) => {
+			const favorites = await this.getUserFavorites(tx, userId);
+
+			return tx.run(
+				`
+			MATCH (:Person {tmdbId: $id})-[:ACTED_IN]->(m:Movie)
+			WHERE m.\`${sort}\` IS NOT NULL
+			RETURN m {
+				.*,
+				favorite: m.tmdbId IN $favorites
+			} AS movie
+			ORDER BY m.\`${sort}\`${order}
+			SKIP $skip
+			LIMIT $limit
+			`,
+				{ skip: int(skip), limit: int(limit), favorites, id }
+			);
+		});
+
+		const movies = res.records.map((row) => toNativeTypes(row.get('movie')));
+		await session.close();
+
+		return movies;
 	}
 	// end::getForActor[]
 
@@ -180,10 +222,39 @@ export default class MovieService {
 		skip = 0,
 		userId = undefined
 	) {
-		// TODO: Get Movies directed by a Person
-		// MATCH (:Person {tmdbId: $id})-[:DIRECTED]->(m:Movie)
+		// Open a new session
+		const session = this.driver.session();
 
-		return popular.slice(skip, skip + limit);
+		// Execute a query in a new Read Transaction
+		const res = await session.executeRead(async (tx) => {
+			// Get an array of IDs for the User's favorite movies
+			const favorites = await this.getUserFavorites(tx, userId);
+
+			// Retrieve a list of movies with the
+			// favorite flag appened to the movie's properties
+			return tx.run(
+				`
+			MATCH (:Person {tmdbId: $id})-[:DIRECTED]->(m:Movie)
+			WHERE m.\`${sort}\` IS NOT NULL
+			RETURN m {
+			  .*,
+			  favorite: m.tmdbId IN $favorites
+			} AS movie
+			ORDER BY m.\`${sort}\` ${order}
+			SKIP $skip
+			LIMIT $limit
+		  `,
+				{ skip: int(skip), limit: int(limit), favorites, id }
+			);
+		});
+
+		// Get a list of Movies from the Result
+		const movies = res.records.map((row) => toNativeTypes(row.get('movie')));
+
+		// Close the session
+		await session.close();
+
+		return movies;
 	}
 	// end::getForDirector[]
 
@@ -200,12 +271,37 @@ export default class MovieService {
 	 * @param {string} id
 	 * @returns {Promise<Record<string, any>>}
 	 */
-	// tag::findById[]
+	// Find a specific movie ById[]
 	async findById(id, userId = undefined) {
-		// TODO: Find a movie by its ID
-		// MATCH (m:Movie {tmdbId: $id})
+		const session = this.driver.session();
 
-		return goodfellas;
+		const res = await session.executeRead(async (tx) => {
+			const favorites = await this.getUserFavorites(tx, userId);
+
+			return tx.run(
+				`
+			MATCH (m:Movie {tmdbId: $id})
+			RETURN m {
+			  .*,
+			  actors: [ (a)-[r:ACTED_IN]->(m) | a { .*, role: r.role } ],
+			  directors: [ (d)-[:DIRECTED]->(m) | d { .* } ],
+			  genres: [ (m)-[:IN_GENRE]->(g) | g { .name }],
+			  ratingCount: size((m)<-[:RATED]-()),
+			  favorite: m.tmdbId IN $favorites
+			} AS movie
+			LIMIT 1
+		  `,
+				{ id, favorites }
+			);
+		});
+
+		await session.close();
+
+		if (res.records.length === 0) {
+			throw new NotFoundError(`Could not find a movie with tmdbId ${id}`);
+		}
+		const [first] = res.records;
+		return toNativeTypes(first.get('movie'));
 	}
 	// end::findById[]
 
@@ -229,15 +325,41 @@ export default class MovieService {
 	 * @param {string | undefined} userId
 	 * @returns {Promise<Record<string, any>[]>}
 	 */
-	// tag::getSimilarMovies[]
+	// tag:: Get Similar Movies[]
 	async getSimilarMovies(id, limit = 6, skip = 0, userId = undefined) {
-		// TODO: Get similar movies based on genres or ratings
+		const session = this.driver.session();
 
-		return popular.slice(skip, skip + limit).map((item) => ({
-			...item,
-			score: (Math.random() * 100).toFixed(2),
-		}));
+		const res = await session.executeRead(async (tx) => {
+			const favorites = await this.getUserFavorites(tx, userId);
+
+			return tx.run(
+				`
+      MATCH (:Movie {tmdbId: $id})-[:IN_GENRE|ACTED_IN|DIRECTED]->()<-[:IN_GENRE|ACTED_IN|DIRECTED]-(m)
+      WHERE m.imdbRating IS NOT NULL
+      WITH m, count(*) AS inCommon
+      WITH m, inCommon, m.imdbRating * inCommon AS score
+      ORDER BY score DESC
+      SKIP $skip
+      LIMIT $limit
+      RETURN m {
+        .*,
+        score: score,
+        favorite: m.tmdbId IN $favorites
+      } AS movie
+    `,
+				{ id, skip: int(skip), limit: int(limit), favorites }
+			);
+		});
+
+		// Get a list of Movies from the Result
+		const movies = res.records.map((row) => toNativeTypes(row.get('movie')));
+
+		// Close the session
+		await session.close();
+
+		return movies;
 	}
+
 	// end::getSimilarMovies[]
 
 	/**
