@@ -44,7 +44,7 @@ export default class GenreService {
 			tx.run(
 				`            
         MATCH (g:Genre)
-        WHERE g.name <> '(no genres listed)''
+        WHERE g.name <> '(no genres listed)'
 
           CALL {
             WITH g
@@ -59,7 +59,7 @@ export default class GenreService {
             .*,
             movies: size((g)<-[:IN_GENRE]-(:Movie)),
             poster: poster
-          }
+          } as genre
           ORDER BY g.name ASC
           `
 			)
