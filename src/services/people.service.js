@@ -82,13 +82,13 @@ export default class PeopleService {
 		const res = await session.executeRead((tx) =>
 			tx.run(
 				`
-			MATCH (p:Person {tmdbId: $id})
-			RETURN p {
-			  .*,
-			  actedCount: size((p)-[:ACTED_IN]->()),
-			  directedCount: size((p)-[:DIRECTED]->())
-			} AS person
-		  `,
+        MATCH (p:Person {tmdbId: $id})
+        RETURN p {
+          .*,
+          actedCount: size((p)-[:ACTED_IN]->()),
+          directedCount: size((p)-[:DIRECTED]->())
+        } AS person
+      `,
 				{ id }
 			)
 		);
