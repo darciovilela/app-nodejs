@@ -85,11 +85,38 @@ export default class GenreService {
 	// tag::find[]
 	async find(name) {
 		// TODO: Open a new session
+		const session = this.driver.session();
 		// TODO: Get Genre information from the database
+		const res = await session.executeRead((tx) =>
+			tx.run(
+				`
+    MATCH (g:Genre {name: $name})<-[:IN_GENRE]-(m:Movie)
+    WHERE m.imdbRating IS NOT NULL
+    AND m.poster IS NOT NULL
+    AND g.name <> '(no genres listed)'
+    WITH g, m
+    ORDER BY m.imdbRating DESC
+    WITH g, head(collect(m)) AS movie
+    RETURN g {
+      link: '/genres/'+ g.name,
+      .name,
+      movies: size((g)<-[:IN_GENRE]-()),
+      poster: movie.poster
+    } AS genre
+  `,
+				{ name }
+			)
+		);
 		// TODO: Throw a 404 Error if the genre is not found
+		if (res.records.length === 0) {
+			throw new NotFoundError(`Could not find a genre with the name '${name}'`);
+		}
 		// TODO: Close the session
+		await session.close();
 
-		return genres.find((genre) => genre.name === name);
+		const [row] = res.records;
+
+		return toNativeTypes(row.get('genre'));
 	}
 	// end::find[]
 }
